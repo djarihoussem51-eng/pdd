@@ -1,0 +1,175 @@
+name: Windows RDP + Tailscale 6 Jam
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rdp:
+    runs-on: windows-2022
+    timeout-minutes: 360
+
+    steps:
+
+      - name: Setup RDP + User + Tailscale
+        shell: powershell
+        env:
+          TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # ==========================================
+          # KONFIGURASI RDP
+          # ==========================================
+          $Username = "rdpwin10"
+          $Password = "PasswordSaya123!"
+
+          Write-Output "::add-mask::$Password"
+
+          # ==========================================
+          # AKTIFKAN RDP
+          # ==========================================
+          Set-ItemProperty `
+            -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server" `
+            -Name "fDenyTSConnections" `
+            -Value 0
+
+          Set-ItemProperty `
+            -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" `
+            -Name "UserAuthentication" `
+            -Value 1
+
+          Enable-NetFirewallRule `
+            -DisplayGroup "Remote Desktop"
+
+          Set-Service `
+            -Name "TermService" `
+            -StartupType Automatic
+
+          Start-Service `
+            -Name "TermService"
+
+          # ==========================================
+          # BUAT USER RDP & AKSES ADMIN
+          # ==========================================
+          $OldUser = Get-LocalUser `
+            -Name $Username `
+            -ErrorAction SilentlyContinue
+
+          if ($OldUser) {
+            Remove-LocalUser -Name $Username
+            Start-Sleep -Seconds 2
+          }
+
+          $SecurePassword = ConvertTo-SecureString `
+            $Password `
+            -AsPlainText `
+            -Force
+
+          New-LocalUser `
+            -Name $Username `
+            -Password $SecurePassword `
+            -FullName "RDP Windows User" `
+            -Description "RDP account" `
+            -PasswordNeverExpires
+
+          Add-LocalGroupMember `
+            -Group "Remote Desktop Users" `
+            -Member $Username
+
+          # Tambah ke grup Administrators agar bebas installer/UAC
+          Add-LocalGroupMember `
+            -Group "Administrators" `
+            -Member $Username
+
+          # ==========================================
+          # INSTALL TAILSCALE (DIPERBAIKI)
+          # ==========================================
+          $Installer = "$env:TEMP\tailscale-setup.msi"
+
+          Invoke-WebRequest `
+            -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi" `
+            -OutFile $Installer `
+            -UserAgent "Mozilla/5.0"
+
+          Start-Process `
+            -FilePath "msiexec.exe" `
+            -ArgumentList "/i `"$Installer`" /qn /norestart" `
+            -Wait
+
+          Start-Sleep -Seconds 10
+
+          $Tailscale = "C:\Program Files\Tailscale\tailscale.exe"
+
+          if (-not (Test-Path $Tailscale)) {
+            throw "Tailscale gagal diinstall."
+          }
+
+          # ==========================================
+          # CONNECT TAILSCALE
+          # ==========================================
+          if ([string]::IsNullOrWhiteSpace($env:TAILSCALE_AUTHKEY)) {
+            throw "Secret TAILSCALE_AUTHKEY belum dibuat."
+          }
+
+          & $Tailscale up `
+            --authkey="$env:TAILSCALE_AUTHKEY" `
+            --unattended=true
+
+          Start-Sleep -Seconds 8
+
+          # ==========================================
+          # AMBIL IP TAILSCALE
+          # ==========================================
+          $IP = (& $Tailscale ip -4).Trim()
+
+          if ([string]::IsNullOrWhiteSpace($IP)) {
+            throw "IP Tailscale tidak ditemukan."
+          }
+
+          # ==========================================
+          # TAMPILKAN DATA LOGIN
+          # ==========================================
+          Write-Host ""
+          Write-Host "========================================"
+          Write-Host "        WINDOWS RDP SIAP"
+          Write-Host "========================================"
+          Write-Host "IP       : $IP"
+          Write-Host "Username : $Username"
+          Write-Host "Password : $Password"
+          Write-Host "Port     : 3389"
+          Write-Host "Durasi   : 6 JAM"
+          Write-Host "========================================"
+
+          # ==========================================
+          # CEK SERVICE
+          # ==========================================
+          Write-Host ""
+          Write-Host "RDP SERVICE:"
+          Get-Service TermService |
+            Select-Object Name, Status, StartType
+
+          Write-Host ""
+          Write-Host "TAILSCALE:"
+          & $Tailscale status
+
+          # ==========================================
+          # KEEP ALIVE 6 JAM
+          # ==========================================
+          $EndTime = (Get-Date).AddHours(6)
+
+          while ((Get-Date) -lt $EndTime) {
+
+            $Remaining = $EndTime - (Get-Date)
+
+            Write-Host ""
+            Write-Host "========================================"
+            Write-Host "RDP AKTIF"
+            Write-Host "IP: $IP"
+            Write-Host "Sisa: $($Remaining.Hours) jam $($Remaining.Minutes) menit"
+            Write-Host "========================================"
+
+            Start-Sleep -Seconds 60
+          }
+
+          Write-Host "6 jam selesai."
+          
