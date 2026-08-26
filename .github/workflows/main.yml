@@ -20,7 +20,7 @@ jobs:
           # ==========================================
           # KONFIGURASI RDP
           # ==========================================
-          $Username = "rdpwin101"
+          $Username = "rdpwin10"
           $Password = "Passwailhou!"
 
           Write-Output "::add-mask::$Password"
