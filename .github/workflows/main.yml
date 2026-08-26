@@ -6,7 +6,7 @@ on:
 jobs:
   rdp:
     runs-on: windows-2022
-    timeout-minutes: 360
+    timeout-minutes: 900
 
     steps:
 
@@ -20,8 +20,8 @@ jobs:
           # ==========================================
           # KONFIGURASI RDP
           # ==========================================
-          $Username = "rdpwin10"
-          $Password = "PasswordSaya123!"
+          $Username = "rdpwin101"
+          $Password = "Passwailhou!"
 
           Write-Output "::add-mask::$Password"
 
